@@ -60,7 +60,8 @@ namespace FlaxEditor.Windows
                 var icon = PluginUtils.TryGetPluginIcon(plugin);
                 if (icon)
                     iconImage.Brush = new TextureBrush(icon);
-
+                
+              
                 Size = new Vector2(300, 100);
 
                 float tmp1 = iconImage.Right + margin;
@@ -172,7 +173,7 @@ namespace FlaxEditor.Windows
         public PluginsWindow(Editor editor)
         : base(editor, true, ScrollBars.None)
         {
-            Title = "Plugins";
+            Title = "Plugins and Game References";
 
             _tabs = new Tabs
             {
@@ -182,7 +183,25 @@ namespace FlaxEditor.Windows
                 TabsSize = new Vector2(120, 32),
                 Parent = this
             };
-
+            
+            // Create category for plugins
+            CategoryEntry categoryPlugin = new CategoryEntry("Plugins")
+            {
+                AnchorPreset = AnchorPresets.StretchAll,
+                Offsets = Margin.Zero,
+                Parent = _tabs
+            };
+            _categories.Add(categoryPlugin);
+            
+            // Create category for game references
+            CategoryEntry categoryReference = new CategoryEntry("References")
+            {
+                AnchorPreset = AnchorPresets.StretchAll,
+                Offsets = Margin.Zero,
+                Parent = _tabs
+            };
+            _categories.Add(categoryReference);
+            
             OnPluginsChanged();
             PluginManager.PluginsChanged += OnPluginsChanged;
         }
@@ -220,23 +239,24 @@ namespace FlaxEditor.Windows
             if (plugin is EditorPlugin editorPlugin && GetPluginEntry(editorPlugin.GamePluginType) != null)
                 return;
 
-            var desc = plugin.Description;
+            /*
             var category = _categories.Find(x => string.Equals(x.Text, desc.Category, StringComparison.OrdinalIgnoreCase));
             if (category == null)
             {
-                category = new CategoryEntry(desc.Category)
+                category = new CategoryEntry("Plugins")
                 {
                     AnchorPreset = AnchorPresets.StretchAll,
                     Offsets = Margin.Zero,
                     Parent = _tabs
                 };
-                _categories.Add(category);
+              
                 category.UnlockChildrenRecursive();
-            }
-
+            }*/
+            var desc = plugin.Description;
+            CategoryEntry category = _categories.Find(c => c.Text == "Plugins");
             entry = new PluginEntry(plugin, category, ref desc)
             {
-                Parent = category.Panel,
+                Parent = category.Panel
             };
             _entries.Add(plugin, entry);
             entry.UnlockChildrenRecursive();
