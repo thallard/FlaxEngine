@@ -16,7 +16,9 @@ namespace FlaxEditor.Windows
     /// <seealso cref="FlaxEditor.Windows.EditorWindow" />
     public sealed class PluginsWindow : EditorWindow
     {
-        private Tabs _tabs;
+        private Tabs _tabsPlugins;
+        private Tabs _tabsPluginsCategory;
+        
         private readonly List<CategoryEntry> _categories = new List<CategoryEntry>();
         private readonly Dictionary<Plugin, PluginEntry> _entries = new Dictionary<Plugin, PluginEntry>();
 
@@ -173,35 +175,41 @@ namespace FlaxEditor.Windows
         public PluginsWindow(Editor editor)
         : base(editor, true, ScrollBars.None)
         {
-            Title = "Plugins and Game References";
-
-            _tabs = new Tabs
+            Title = "Plugins and Project References";
+            
+            // Create main Tabs
+            _tabsPlugins = new Tabs
             {
-                Orientation = Orientation.Vertical,
+                Orientation = Orientation.Horizontal,
                 AnchorPreset = AnchorPresets.StretchAll,
                 Offsets = Margin.Zero,
                 TabsSize = new Vector2(120, 32),
                 Parent = this
             };
+
+            var tabPlugins = new Tab("Plugins");
+            _tabsPlugins.AddTab(tabPlugins);
+            _tabsPlugins.AddTab(new Tab("Project References"));
             
-            // Create category for plugins
-            CategoryEntry categoryPlugin = new CategoryEntry("Plugins")
+            // Create vertical Tabs for plugins category
+            _tabsPluginsCategory = new Tabs
+            {
+                Orientation = Orientation.Vertical,
+                AnchorPreset = AnchorPresets.StretchAll,
+                Offsets = Margin.Zero,
+                TabsSize = new Vector2(120, 32),
+                Parent = tabPlugins
+            };
+            
+            // Create default category for plugins
+            var categoryPlugin = new CategoryEntry("No category")
             {
                 AnchorPreset = AnchorPresets.StretchAll,
                 Offsets = Margin.Zero,
-                Parent = _tabs
+                Parent = _tabsPluginsCategory
             };
             _categories.Add(categoryPlugin);
-            
-            // Create category for game references
-            CategoryEntry categoryReference = new CategoryEntry("References")
-            {
-                AnchorPreset = AnchorPresets.StretchAll,
-                Offsets = Margin.Zero,
-                Parent = _tabs
-            };
-            _categories.Add(categoryReference);
-            
+
             OnPluginsChanged();
             PluginManager.PluginsChanged += OnPluginsChanged;
         }
@@ -221,7 +229,10 @@ namespace FlaxEditor.Windows
             if (toRemove != null)
             {
                 foreach (var plugin in toRemove)
+                {
+                    Debug.Log(plugin.Plugin.Description.Category);
                     OnPluginRemove(plugin);
+                }
             }
             foreach (var plugin in PluginManager.GamePlugins)
                 OnPluginAdd(plugin);
@@ -238,31 +249,45 @@ namespace FlaxEditor.Windows
             // Special case for editor plugins (merge with game plugin if has linked)
             if (plugin is EditorPlugin editorPlugin && GetPluginEntry(editorPlugin.GamePluginType) != null)
                 return;
+            
+            var desc = plugin.Description;
+            CategoryEntry category;
 
-            /*
-            var category = _categories.Find(x => string.Equals(x.Text, desc.Category, StringComparison.OrdinalIgnoreCase));
+            // Define the plugin category
+            if (desc.Category == null)
+            {
+                category = _categories.Find(x => string.Equals(x.Text, "No category", StringComparison.OrdinalIgnoreCase));
+                
+                desc.Category = "No category";
+            }
+            else
+                category = _categories.Find(x => string.Equals(x.Text, desc.Category, StringComparison.OrdinalIgnoreCase));
+            if (category != null) 
+                Debug.Log("je verifie la valeur de la categorie trouve = " + category.Text);
+            // Create a new one if isn't exist in category list
             if (category == null)
             {
-                category = new CategoryEntry("Plugins")
+                category = new CategoryEntry(desc.Category)
                 {
                     AnchorPreset = AnchorPresets.StretchAll,
                     Offsets = Margin.Zero,
-                    Parent = _tabs
+                    Parent = _tabsPluginsCategory
                 };
-              
+                _categories.Add(category);
                 category.UnlockChildrenRecursive();
-            }*/
-            var desc = plugin.Description;
-            CategoryEntry category = _categories.Find(c => c.Text == "Plugins");
+            }
             entry = new PluginEntry(plugin, category, ref desc)
             {
                 Parent = category.Panel
             };
+            
             _entries.Add(plugin, entry);
+            foreach (var plug in _entries)
+                Debug.Log("la categ " + plug.Value.Plugin.Description.Category);
             entry.UnlockChildrenRecursive();
 
-            if (_tabs.SelectedTab == null)
-                _tabs.SelectedTab = category;
+            if (_tabsPlugins.SelectedTab == null)
+                _tabsPlugins.SelectedTab = category;
         }
 
         private void OnPluginRemove(PluginEntry entry)
@@ -270,18 +295,18 @@ namespace FlaxEditor.Windows
             var category = entry.Category;
             _entries.Remove(entry.Plugin);
             entry.Dispose();
-
+            Debug.Log("la categorie du plugin en train detre remove = " + entry.Plugin.Description.Category);
             // If category is not used anymore
-            if (_entries.Values.Count(x => x.Category == category) == 0)
+            if (_entries.Values.Count(x => x.Category == category) == 0 && category.Text != "No category")
             {
-                if (_tabs.SelectedTab == category)
-                    _tabs.SelectedTab = null;
+                if (_tabsPlugins.SelectedTab == category)
+                    _tabsPlugins.SelectedTab = null;
 
                 category.Dispose();
                 _categories.Remove(category);
 
-                if (_tabs.SelectedTab == null && _categories.Count > 0)
-                    _tabs.SelectedTab = _categories[0];
+                if (_tabsPlugins.SelectedTab == null && _categories.Count > 0)
+                    _tabsPlugins.SelectedTab = _categories[0];
             }
         }
 
