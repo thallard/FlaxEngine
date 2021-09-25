@@ -24,6 +24,8 @@
 bool CollisionCooking::CookConvexMesh(CookingInput& input, BytesContainer& output)
 {
     ENSURE_CAN_COOK;
+    if (input.VertexCount == 0)
+        LOG(Warning, "Empty mesh data for collision cooking.");
 
     // Init options
     PxConvexMeshDesc desc;
@@ -62,6 +64,8 @@ bool CollisionCooking::CookConvexMesh(CookingInput& input, BytesContainer& outpu
 bool CollisionCooking::CookTriangleMesh(CookingInput& input, BytesContainer& output)
 {
     ENSURE_CAN_COOK;
+    if (input.VertexCount == 0 || input.IndexCount == 0)
+        LOG(Warning, "Empty mesh data for collision cooking.");
 
     // Init options
     PxTriangleMeshDesc desc;
@@ -274,11 +278,11 @@ bool CollisionCooking::CookCollision(const Argument& arg, CollisionData::Seriali
         // Combine meshes into one
         int32 vCount = 0;
         for (int32 i = 0; i < vertexCounts.Count(); i++)
-            vCount += vertexCounts[0];
+            vCount += vertexCounts[i];
         finalVertexData.Allocate(vCount);
         int32 iCount = 0;
         for (int32 i = 0; i < indexCounts.Count(); i++)
-            iCount += indexCounts[0];
+            iCount += indexCounts[i];
         finalIndexData.Allocate(iCount);
         int32 vertexCounter = 0, indexCounter = 0;
         for (int32 i = 0; i < meshesCount; i++)

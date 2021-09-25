@@ -46,7 +46,7 @@ private:
         MonoObject* ManagedObject = nullptr;
         MProperty* Property = nullptr;
         MField* Field = nullptr;
-        MMethod* Method = nullptr;
+        void* Method = nullptr;
         int32 RestoreStateIndex = -1;
 
         TrackInstance()
@@ -158,11 +158,7 @@ public:
     /// Gets the current animation playback time position (seconds).
     /// </summary>
     /// <returns>The animation playback time position (seconds).</returns>
-    API_PROPERTY(Attributes="NoSerialize, HideInEditor")
-    FORCE_INLINE float GetTime() const
-    {
-        return _time;
-    }
+    API_PROPERTY(Attributes="NoSerialize, HideInEditor") float GetTime() const;
 
     /// <summary>
     /// Sets the current animation playback time position (seconds).

@@ -6,6 +6,9 @@
 #include "Engine/Core/Formatting.h"
 #include "Engine/Core/Templates.h"
 
+struct Double2;
+struct Double3;
+struct Double4;
 struct Quaternion;
 struct Matrix;
 struct Vector2;
@@ -134,7 +137,7 @@ public:
     // Init
     // @param xy Vector2 with X and Y components values
     // @param z Z component value
-    Vector3(const Vector2& xy, float z);
+    explicit Vector3(const Vector2& xy, float z);
 
     // Init
     // @param xy Vector3 value
@@ -157,6 +160,19 @@ public:
     // @param xyz Vector4 value
     explicit Vector3(const Vector4& xyz);
 
+    // Init
+    // @param xy Double2 with X and Y components values
+    // @param z Z component value
+    explicit  Vector3(const Double2& xy, float z);
+
+    // Init
+    // @param xyz Double3 value
+    explicit Vector3(const Double3& xyz);
+
+    // Init
+    // @param xyzw Double4 value
+    explicit  Vector3(const Double4& xyzw);
+    
     // Init
     // @param color Color value
     explicit Vector3(const Color& color);
@@ -913,6 +929,19 @@ public:
     /// <returns>The triangle area.</returns>
     static float TriangleArea(const Vector3& v0, const Vector3& v1, const Vector3& v2);
 
+    /// <summary>
+    /// Calculates the angle (in radians) between from and to. This is always the smallest value.
+    /// </summary>
+    /// <param name="from">The first vector.</param>
+    /// <param name="to">The second vector.</param>
+    /// <returns>The angle (in radians).</returns>
+    static float Angle(const Vector3& from, const Vector3& to)
+    {
+        const float dot = Math::Clamp(Dot(Normalize(from), Normalize(to)), -1.0f, 1.0f);
+        if (Math::Abs(dot) > (1.0f - ZeroTolerance))
+            return dot > 0.0f ? 0.0f : PI;
+        return Math::Acos(dot);
+    }
 };
 
 inline Vector3 operator+(float a, const Vector3& b)

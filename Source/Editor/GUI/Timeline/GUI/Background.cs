@@ -16,6 +16,9 @@ namespace FlaxEditor.GUI.Timeline.GUI
         private readonly Timeline _timeline;
         private float[] _tickSteps;
         private float[] _tickStrengths;
+        private bool _leftMouseDown;
+        private Vector2 _leftMouseDownPos = Vector2.Minimum;
+        private Vector2 _mousePos = Vector2.Minimum;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Background"/> class.
@@ -26,6 +29,80 @@ namespace FlaxEditor.GUI.Timeline.GUI
             _timeline = timeline;
             _tickSteps = Utilities.Utils.CurveTickSteps;
             _tickStrengths = new float[_tickSteps.Length];
+        }
+
+        private void UpdateSelectionRectangle()
+        {
+            var selectionRect = Rectangle.FromPoints(_leftMouseDownPos, _mousePos);
+            _timeline.OnKeyframesSelection(null, this, selectionRect);
+        }
+
+        /// <inheritdoc />
+        public override bool OnMouseDown(Vector2 location, MouseButton button)
+        {
+            if (base.OnMouseDown(location, button))
+            {
+                _leftMouseDown = false;
+                return true;
+            }
+
+            _mousePos = location;
+            if (button == MouseButton.Left)
+            {
+                // Start selecting
+                _leftMouseDown = true;
+                _leftMouseDownPos = location;
+                StartMouseCapture();
+                _timeline.OnKeyframesDeselect(null);
+                Focus();
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <inheritdoc />
+        public override bool OnMouseUp(Vector2 location, MouseButton button)
+        {
+            _mousePos = location;
+
+            if (_leftMouseDown && button == MouseButton.Left)
+            {
+                // End selecting
+                _leftMouseDown = false;
+                EndMouseCapture();
+            }
+
+            if (base.OnMouseUp(location, button))
+            {
+                _leftMouseDown = false;
+                return true;
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc />
+        public override void OnMouseMove(Vector2 location)
+        {
+            _mousePos = location;
+
+            // Selecting
+            if (_leftMouseDown)
+            {
+                UpdateSelectionRectangle();
+                return;
+            }
+
+            base.OnMouseMove(location);
+        }
+
+        /// <inheritdoc />
+        public override void OnLostFocus()
+        {
+            _leftMouseDown = false;
+
+            base.OnLostFocus();
         }
 
         /// <inheritdoc />
@@ -46,10 +123,16 @@ namespace FlaxEditor.GUI.Timeline.GUI
             var areaLeft = -X;
             var areaRight = Parent.Width + mediaBackground.ControlsBounds.BottomRight.X;
             var height = Height;
-            var leftSideMin = PointFromParent(Vector2.Zero);
-            var leftSideMax = BottomLeft;
-            var rightSideMin = UpperRight;
-            var rightSideMax = PointFromParent(Parent.BottomRight) + mediaBackground.ControlsBounds.BottomRight;
+
+            // Calculate the timeline range in the view to optimize background drawing
+            Render2D.PeekClip(out var globalClipping);
+            Render2D.PeekTransform(out var globalTransform);
+            var globalRect = new Rectangle(globalTransform.M31 + areaLeft, globalTransform.M32, areaRight * globalTransform.M11, height * globalTransform.M22);
+            var globalMask = Rectangle.Shared(globalClipping, globalRect);
+            var globalTransformInv = Matrix3x3.Invert(globalTransform);
+            var localRect = Rectangle.FromPoints(Matrix3x3.Transform2D(globalMask.UpperLeft, globalTransformInv), Matrix3x3.Transform2D(globalMask.BottomRight, globalTransformInv));
+            var localRectMin = localRect.UpperLeft;
+            var localRectMax = localRect.BottomRight;
 
             // Draw lines between tracks
             Render2D.DrawLine(new Vector2(areaLeft, 0.5f), new Vector2(areaRight, 0.5f), linesColor);
@@ -69,28 +152,26 @@ namespace FlaxEditor.GUI.Timeline.GUI
                 var track = tracks[i];
                 if (track.Visible && _timeline.SelectedTracks.Contains(track) && _timeline.ContainsFocus)
                 {
-                    Render2D.FillRectangle(new Rectangle(areaLeft, track.Top, areaRight, track.Height), style.BackgroundSelected);
+                    Render2D.FillRectangle(new Rectangle(areaLeft, track.Top, areaRight, track.Height), style.BackgroundSelected.RGBMultiplied(0.4f));
                 }
             }
 
             // Setup time axis ticks
-            int minDistanceBetweenTicks = 4000;
-            int maxDistanceBetweenTicks = 6000;
+            var minDistanceBetweenTicks = 50.0f;
+            var maxDistanceBetweenTicks = 100.0f;
             var zoom = Timeline.UnitsPerSecond * _timeline.Zoom;
-            var left = Vector2.Min(leftSideMin, rightSideMax).X;
-            var right = Vector2.Max(leftSideMin, rightSideMax).X;
-            var pixelRange = (right - left) * zoom;
+            var left = Vector2.Min(localRectMin, localRectMax).X;
+            var right = Vector2.Max(localRectMin, localRectMax).X;
             var leftFrame = Mathf.Floor((left - Timeline.StartOffset) / zoom) * _timeline.FramesPerSecond;
             var rightFrame = Mathf.Ceil((right - Timeline.StartOffset) / zoom) * _timeline.FramesPerSecond;
             var min = leftFrame;
             var max = rightFrame;
-            var range = max - min;
             int smallestTick = 0;
             int biggestTick = _tickSteps.Length - 1;
             for (int i = _tickSteps.Length - 1; i >= 0; i--)
             {
                 // Calculate how far apart these modulo tick steps are spaced
-                float tickSpacing = _tickSteps[i] * pixelRange / range;
+                float tickSpacing = _tickSteps[i] * _timeline.Zoom;
 
                 // Calculate the strength of the tick markers based on the spacing
                 _tickStrengths[i] = Mathf.Saturate((tickSpacing - minDistanceBetweenTicks) / (maxDistanceBetweenTicks - minDistanceBetweenTicks));
@@ -117,20 +198,30 @@ namespace FlaxEditor.GUI.Timeline.GUI
 
                 // Draw all ticks
                 int l = Mathf.Clamp(smallestTick + level, 0, _tickSteps.Length - 1);
-                int startTick = Mathf.FloorToInt(min / _tickSteps[l]);
-                int endTick = Mathf.CeilToInt(max / _tickSteps[l]);
+                var lStep = _tickSteps[l];
+                var lNextStep = _tickSteps[l + 1];
+                int startTick = Mathf.FloorToInt(min / lStep);
+                int endTick = Mathf.CeilToInt(max / lStep);
                 Color lineColor = style.ForegroundDisabled.RGBMultiplied(0.7f).AlphaMultiplied(strength);
                 for (int i = startTick; i <= endTick; i++)
                 {
-                    if (l < biggestTick && (i % Mathf.RoundToInt(_tickSteps[l + 1] / _tickSteps[l]) == 0))
+                    if (l < biggestTick && (i % Mathf.RoundToInt(lNextStep / lStep) == 0))
                         continue;
-                    var tick = i * _tickSteps[l];
+                    var tick = i * lStep;
                     var time = tick / _timeline.FramesPerSecond;
                     var x = time * zoom + Timeline.StartOffset;
 
                     // Draw line
                     Render2D.FillRectangle(new Rectangle(x - 0.5f, 0, 1.0f, height), lineColor);
                 }
+            }
+
+            // Draw selection rectangle
+            if (_leftMouseDown)
+            {
+                var selectionRect = Rectangle.FromPoints(_leftMouseDownPos, _mousePos);
+                Render2D.FillRectangle(selectionRect, Color.Orange * 0.4f);
+                Render2D.DrawRectangle(selectionRect, Color.Orange);
             }
 
             DrawChildren();
@@ -146,9 +237,15 @@ namespace FlaxEditor.GUI.Timeline.GUI
             }
 
             // Darken area outside the duration
-            var outsideDurationAreaColor = new Color(0, 0, 0, 100);
-            Render2D.FillRectangle(new Rectangle(leftSideMin, leftSideMax.X - leftSideMin.X, height), outsideDurationAreaColor);
-            Render2D.FillRectangle(new Rectangle(rightSideMin, rightSideMax.X - rightSideMin.X, height), outsideDurationAreaColor);
+            {
+                var outsideDurationAreaColor = new Color(0, 0, 0, 100);
+                var leftSideMin = PointFromParent(Vector2.Zero);
+                var leftSideMax = BottomLeft;
+                var rightSideMin = UpperRight;
+                var rightSideMax = PointFromParent(Parent.BottomRight) + mediaBackground.ControlsBounds.BottomRight;
+                Render2D.FillRectangle(new Rectangle(leftSideMin, leftSideMax.X - leftSideMin.X, height), outsideDurationAreaColor);
+                Render2D.FillRectangle(new Rectangle(rightSideMin, rightSideMax.X - rightSideMin.X, height), outsideDurationAreaColor);
+            }
 
             // Draw time axis header
             var timeAxisHeaderOffset = -_timeline.MediaBackground.ViewOffset.Y;
@@ -163,15 +260,17 @@ namespace FlaxEditor.GUI.Timeline.GUI
 
                 // Draw all ticks
                 int l = Mathf.Clamp(smallestTick + level, 0, _tickSteps.Length - 1);
-                int startTick = Mathf.FloorToInt(min / _tickSteps[l]);
-                int endTick = Mathf.CeilToInt(max / _tickSteps[l]);
+                var lStep = _tickSteps[l];
+                var lNextStep = _tickSteps[l + 1];
+                int startTick = Mathf.FloorToInt(min / lStep);
+                int endTick = Mathf.CeilToInt(max / lStep);
                 Color lineColor = style.Foreground.RGBMultiplied(0.8f).AlphaMultiplied(strength);
                 Color labelColor = style.ForegroundDisabled.AlphaMultiplied(strength);
                 for (int i = startTick; i <= endTick; i++)
                 {
-                    if (l < biggestTick && (i % Mathf.RoundToInt(_tickSteps[l + 1] / _tickSteps[l]) == 0))
+                    if (l < biggestTick && (i % Mathf.RoundToInt(lNextStep / lStep) == 0))
                         continue;
-                    var tick = i * _tickSteps[l];
+                    var tick = i * lStep;
                     var time = tick / _timeline.FramesPerSecond;
                     var x = time * zoom + Timeline.StartOffset;
 
@@ -195,17 +294,7 @@ namespace FlaxEditor.GUI.Timeline.GUI
                     default: throw new ArgumentOutOfRangeException();
                     }
                     var labelRect = new Rectangle(x + 2, -verticalLinesHeaderExtend + timeAxisHeaderOffset, 50, verticalLinesHeaderExtend);
-                    Render2D.DrawText(
-                        style.FontSmall,
-                        labelText,
-                        labelRect,
-                        labelColor,
-                        TextAlignment.Near,
-                        TextAlignment.Center,
-                        TextWrapping.NoWrap,
-                        1.0f,
-                        0.8f
-                    );
+                    Render2D.DrawText(style.FontSmall, labelText, labelRect, labelColor, TextAlignment.Near, TextAlignment.Center, TextWrapping.NoWrap, 1.0f, 0.8f);
                 }
             }
         }
@@ -219,9 +308,28 @@ namespace FlaxEditor.GUI.Timeline.GUI
             // Zoom in/out
             if (IsMouseOver && Root.GetKey(KeyboardKeys.Control))
             {
-                // TODO: preserve the view center point for easier zooming
+                var locationTimeOld = _timeline.MediaBackground.PointFromParent(_timeline, _timeline.Size * 0.5f).X;
+                var frame = (locationTimeOld - Timeline.StartOffset * 2.0f) / _timeline.Zoom / Timeline.UnitsPerSecond * _timeline.FramesPerSecond;
+
                 _timeline.Zoom += delta * 0.1f;
+
+                var locationTimeNew = frame / _timeline.FramesPerSecond * Timeline.UnitsPerSecond * _timeline.Zoom + Timeline.StartOffset * 2.0f;
+                var locationTimeDelta = locationTimeNew - locationTimeOld;
+                var scroll = _timeline.MediaBackground.HScrollBar;
+                if (scroll.Visible && scroll.Enabled)
+                    scroll.TargetValue += locationTimeDelta;
                 return true;
+            }
+
+            // Scroll view horizontally
+            if (IsMouseOver && Root.GetKey(KeyboardKeys.Shift))
+            {
+                var scroll = _timeline.MediaBackground.HScrollBar;
+                if (scroll.Visible && scroll.Enabled)
+                {
+                    scroll.TargetValue -= delta * Timeline.UnitsPerSecond / _timeline.Zoom;
+                    return true;
+                }
             }
 
             return false;

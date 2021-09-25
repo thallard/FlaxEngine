@@ -32,7 +32,7 @@ namespace FlaxEditor.GUI.Timeline
         /// <summary>
         /// The default drag insert position margin.
         /// </summary>
-        public const float DefaultDragInsertPositionMargin = 2.0f;
+        public const float DefaultDragInsertPositionMargin = 4.0f;
 
         /// <summary>
         /// The header height.
@@ -170,6 +170,16 @@ namespace FlaxEditor.GUI.Timeline
         /// The loop flag. Looped tracks are doing a playback of its data in a loop.
         /// </summary>
         public bool Loop;
+
+        /// <summary>
+        /// The minimum amount of media items for this track.
+        /// </summary>
+        public int MinMediaCount = 0;
+
+        /// <summary>
+        /// The maximum amount of media items for this track.
+        /// </summary>
+        public int MaxMediaCount = 1024;
 
         /// <summary>
         /// The track archetype.
@@ -378,6 +388,14 @@ namespace FlaxEditor.GUI.Timeline
             }
 
             Dispose();
+        }
+
+        /// <summary>
+        /// Called when track gets duplicated.
+        /// </summary>
+        /// <param name="clone">The cloned track instance.</param>
+        public virtual void OnDuplicated(Track clone)
+        {
         }
 
         /// <summary>
@@ -708,17 +726,22 @@ namespace FlaxEditor.GUI.Timeline
         /// <summary>
         /// Gets a value indicating whether user can drag this track.
         /// </summary>
-        protected virtual bool CanDrag => true;
+        public virtual bool CanDrag => true;
 
         /// <summary>
         /// Gets a value indicating whether user can rename this track.
         /// </summary>
-        protected virtual bool CanRename => true;
+        public virtual bool CanRename => true;
+
+        /// <summary>
+        /// Gets a value indicating whether user can copy and paste this track.
+        /// </summary>
+        public virtual bool CanCopyPaste => true;
 
         /// <summary>
         /// Gets a value indicating whether user can expand the track contents of the inner hierarchy.
         /// </summary>
-        protected virtual bool CanExpand => SubTracks.Count > 0;
+        public virtual bool CanExpand => SubTracks.Count > 0;
 
         /// <summary>
         /// Determines whether this track can get the child track.
@@ -1009,13 +1032,19 @@ namespace FlaxEditor.GUI.Timeline
                 // Show context menu
                 var menu = new ContextMenu.ContextMenu();
                 if (CanRename)
-                    menu.AddButton("Rename", StartRenaming);
-                menu.AddButton("Delete", Delete);
+                    menu.AddButton("Rename", "F2", StartRenaming);
+                if (CanCopyPaste)
+                    menu.AddButton("Duplicate", "Ctrl+D", () => Timeline.DuplicateSelection());
+                menu.AddButton("Delete", "Del", Delete);
                 if (CanExpand)
                 {
                     menu.AddSeparator();
                     menu.AddButton("Expand All", ExpandAll);
                     menu.AddButton("Collapse All", CollapseAll);
+                }
+                if (SubTracks.Count > 1)
+                {
+                    menu.AddButton("Sort All", () => _timeline.SortTrack(this, _subTracks.Sort));
                 }
                 OnContextMenu(menu);
                 menu.Show(this, location);
@@ -1248,6 +1277,13 @@ namespace FlaxEditor.GUI.Timeline
                 case KeyboardKeys.Delete:
                     _timeline.DeleteSelection();
                     return true;
+                case KeyboardKeys.D:
+                    if (Root.GetKey(KeyboardKeys.Control) && CanCopyPaste)
+                    {
+                        _timeline.DuplicateSelection();
+                        return true;
+                    }
+                    break;
                 case KeyboardKeys.ArrowLeft:
                     if (CanExpand && IsExpanded)
                     {
@@ -1319,6 +1355,18 @@ namespace FlaxEditor.GUI.Timeline
             // Base
             if (_opened)
                 base.OnKeyUp(key);
+        }
+
+        /// <inheritdoc />
+        public override int Compare(Control other)
+        {
+            if (other is Track otherTrack)
+            {
+                var name = Title ?? Name;
+                var otherName = otherTrack.Title ?? otherTrack.Name;
+                return string.Compare(name, otherName, StringComparison.InvariantCulture);
+            }
+            return base.Compare(other);
         }
 
         /// <inheritdoc />

@@ -31,7 +31,7 @@
 #include "Platform/Windows/WindowsPlatformTools.h"
 #include "Engine/Platform/Windows/WindowsPlatformSettings.h"
 #endif
-#if PLATFORM_TOOLS_UWP || PLATFORM_TOOLS_XBOX_ONE
+#if PLATFORM_TOOLS_UWP
 #include "Platform/UWP/UWPPlatformTools.h"
 #include "Engine/Platform/UWP/UWPPlatformSettings.h"
 #endif
@@ -41,6 +41,9 @@
 #endif
 #if PLATFORM_TOOLS_PS4
 #include "Platforms/PS4/Editor/PlatformTools/PS4PlatformTools.h"
+#endif
+#if PLATFORM_TOOLS_XBOX_ONE
+#include "Platforms/XboxOne/Editor/PlatformTools/XboxOnePlatformTools.h"
 #endif
 #if PLATFORM_TOOLS_XBOX_SCARLETT
 #include "Platforms/XboxScarlett/Editor/PlatformTools/XboxScarlettPlatformTools.h"
@@ -58,8 +61,8 @@ namespace GameCookerImpl
     MMethod* Internal_OnProgress = nullptr;
     MMethod* Internal_OnCollectAssets = nullptr;
 
-    bool IsRunning = false;
-    bool IsThreadRunning = false;
+    volatile bool IsRunning = false;
+    volatile bool IsThreadRunning = false;
     int64 CancelFlag = 0;
     int64 CancelThreadFlag = 0;
     ConditionVariable ThreadCond;
@@ -68,7 +71,7 @@ namespace GameCookerImpl
     String ProgressMsg;
     float ProgressValue;
 
-    CookingData Data;
+    CookingData* Data = nullptr;
     Array<GameCooker::BuildStep*> Steps;
     Dictionary<BuildPlatform, PlatformTools*> Tools;
 
@@ -154,6 +157,11 @@ CookingData::Statistics::Statistics()
     ContentSizeMB = 0;
 }
 
+CookingData::CookingData(const SpawnParams& params)
+    : PersistentScriptingObject(params)
+{
+}
+
 String CookingData::GetGameBinariesPath() const
 {
     const Char* archDir;
@@ -179,7 +187,7 @@ String CookingData::GetGameBinariesPath() const
         return String::Empty;
     }
 
-    return GetPlatformBinariesRoot() / TEXT("Game") / archDir / ToString(Configuration);
+    return GetPlatformBinariesRoot() / TEXT("Game") / archDir / ::ToString(Configuration);
 }
 
 String CookingData::GetPlatformBinariesRoot() const
@@ -239,7 +247,7 @@ public:
 
 GameCookerService GameCookerServiceInstance;
 
-const CookingData& GameCooker::GetCurrentData()
+CookingData* GameCooker::GetCurrentData()
 {
     return Data;
 }
@@ -271,10 +279,10 @@ PlatformTools* GameCooker::GetTools(BuildPlatform platform)
 #endif
 #if PLATFORM_TOOLS_UWP
         case BuildPlatform::UWPx86:
-            result = New<WSAPlatformTools>(ArchitectureType::x86);
+            result = New<UWPPlatformTools>(ArchitectureType::x86);
             break;
         case BuildPlatform::UWPx64:
-            result = New<WSAPlatformTools>(ArchitectureType::x64);
+            result = New<UWPPlatformTools>(ArchitectureType::x64);
             break;
 #endif
 #if PLATFORM_TOOLS_XBOX_ONE
@@ -313,7 +321,7 @@ PlatformTools* GameCooker::GetTools(BuildPlatform platform)
     return result;
 }
 
-void GameCooker::Build(BuildPlatform platform, BuildConfiguration configuration, const StringView& outputPath, BuildOptions options, const Array<String>& customDefines)
+void GameCooker::Build(BuildPlatform platform, BuildConfiguration configuration, const StringView& outputPath, BuildOptions options, const Array<String>& customDefines, const StringView& preset, const StringView& presetTarget)
 {
     if (IsRunning())
     {
@@ -331,12 +339,14 @@ void GameCooker::Build(BuildPlatform platform, BuildConfiguration configuration,
     CancelFlag = 0;
     ProgressMsg.Clear();
     ProgressValue = 1.0f;
-    CookingData& data = Data;
-    data.Init();
+    Data = New<CookingData>();
+    CookingData& data = *Data;
     data.Tools = tools;
     data.Platform = platform;
     data.Configuration = configuration;
     data.Options = options;
+    data.Preset = preset;
+    data.PresetTarget = presetTarget;
     data.CustomDefines = customDefines;
     data.OriginalOutputPath = outputPath;
     FileSystem::NormalizePath(data.OriginalOutputPath);
@@ -448,7 +458,7 @@ void GameCookerImpl::OnCollectAssets(HashSet<Guid>& assets)
 
 bool GameCookerImpl::Build()
 {
-    CookingData& data = Data;
+    CookingData& data = *Data;
     LOG(Info, "Starting Game Cooker...");
     LOG(Info, "Platform: {0}, Configuration: {2}, Options: {1}", ::ToString(data.Platform), (int32)data.Options, ::ToString(data.Configuration));
     LOG(Info, "Output Path: {0}", data.OriginalOutputPath);
@@ -472,7 +482,7 @@ bool GameCookerImpl::Build()
     CallEvent(GameCooker::EventType::BuildStarted);
     for (int32 stepIndex = 0; stepIndex < Steps.Count(); stepIndex++)
         Steps[stepIndex]->OnBuildStarted(data);
-    Data.Tools->OnBuildStarted(data);
+    data.Tools->OnBuildStarted(data);
     data.InitProgress(Steps.Count());
 
     // Execute all steps in a sequence
@@ -511,10 +521,12 @@ bool GameCookerImpl::Build()
     }
     IsRunning = false;
     CancelFlag = 0;
-    Data.Tools->OnBuildEnded(data, failed);
+    data.Tools->OnBuildEnded(data, failed);
     for (int32 stepIndex = 0; stepIndex < Steps.Count(); stepIndex++)
         Steps[stepIndex]->OnBuildEnded(data, failed);
     CallEvent(failed ? GameCooker::EventType::BuildFailed : GameCooker::EventType::BuildDone);
+    Delete(Data);
+    Data = nullptr;
 
     return failed;
 }

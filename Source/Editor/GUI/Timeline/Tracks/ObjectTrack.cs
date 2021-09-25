@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text;
 using FlaxEditor.CustomEditors;
 using FlaxEditor.GUI.ContextMenu;
+using FlaxEditor.Scripting;
 using FlaxEngine;
 using FlaxEngine.GUI;
 
@@ -27,7 +28,7 @@ namespace FlaxEditor.GUI.Timeline.Tracks
     /// The timeline track for animating managed objects.
     /// </summary>
     /// <seealso cref="FlaxEditor.GUI.Timeline.Track" />
-    public abstract class ObjectTrack : Track, IObjectTrack
+    public abstract class ObjectTrack : ConductorTrack, IObjectTrack
     {
         private bool _hasObject;
 
@@ -41,9 +42,13 @@ namespace FlaxEditor.GUI.Timeline.Tracks
         /// </summary>
         public abstract object Object { get; }
 
-        /// <inheritdoc />
-        protected ObjectTrack(ref TrackCreateOptions options)
-        : base(ref options)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ObjectTrack"/> class.
+        /// </summary>
+        /// <param name="options">The track initial options.</param>
+        /// <param name="useProxyKeyframes">True if show sub-tracks keyframes as a proxy on this track, otherwise false.</param>
+        protected ObjectTrack(ref TrackCreateOptions options, bool useProxyKeyframes = true)
+        : base(ref options, useProxyKeyframes)
         {
             // Add track button
             const float buttonSize = 14;
@@ -197,8 +202,8 @@ namespace FlaxEditor.GUI.Timeline.Tracks
                 AddMemberTag tag;
                 tag.Member = m;
                 tag.Archetype = EventTrack.GetArchetype();
-
-                menu.AddButton(sb.ToString(), OnAddMemberTrack).Tag = tag;
+                var tooltip = Surface.SurfaceUtils.GetVisualScriptMemberInfoDescription(new ScriptMemberInfo(m));
+                menu.AddButton(sb.ToString(), OnAddMemberTrack).LinkTooltip(tooltip).Tag = tag;
                 count++;
             }
 
@@ -295,7 +300,8 @@ namespace FlaxEditor.GUI.Timeline.Tracks
                 AddMemberTag tag;
                 tag.Member = m;
                 tag.Archetype = archetype;
-                menu.AddButton(name + " " + m.Name, OnAddMemberTrack).Tag = tag;
+                var tooltip = Surface.SurfaceUtils.GetVisualScriptMemberInfoDescription(new ScriptMemberInfo(m));
+                menu.AddButton(name + " " + m.Name, OnAddMemberTrack).LinkTooltip(tooltip).Tag = tag;
                 count++;
             }
 

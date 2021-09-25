@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using FlaxEditor.CustomEditors.Elements;
 using FlaxEditor.CustomEditors.GUI;
+using FlaxEditor.GUI.ContextMenu;
 using FlaxEditor.Scripting;
 using FlaxEngine;
 using FlaxEngine.GUI;
@@ -228,6 +229,7 @@ namespace FlaxEditor.CustomEditors.Editors
         }
 
         private VisibleIfCache[] _visibleIfCaches;
+        private bool _isNull;
 
         /// <summary>
         /// Gets the items for the type
@@ -264,7 +266,7 @@ namespace FlaxEditor.CustomEditors.Editors
                     // Skip properties without getter or setter
                     if (!p.HasGet || (!p.HasSet && !showInEditor))
                         continue;
-                    
+
                     // Skip hidden fields, handle special attributes
                     if ((!p.IsPublic && !showInEditor) || attributes.Any(x => x is HideInEditorAttribute))
                         continue;
@@ -329,6 +331,52 @@ namespace FlaxEditor.CustomEditors.Editors
 
             Debug.LogError("Invalid VisibleIf rule. Cannot find member " + visibleIf.MemberName);
             return ScriptMemberInfo.Null;
+        }
+
+        private void GroupPanelCheckIfCanRevert(LayoutElementsContainer layout, ref bool canRevertReference, ref bool canRevertDefault)
+        {
+            if (layout == null || canRevertReference && canRevertDefault)
+                return;
+
+            foreach (var editor in layout.Editors)
+            {
+                canRevertReference |= editor.CanRevertReferenceValue;
+                canRevertDefault |= editor.CanRevertDefaultValue;
+            }
+
+            foreach (var child in layout.Children)
+                GroupPanelCheckIfCanRevert(child as LayoutElementsContainer, ref canRevertReference, ref canRevertDefault);
+        }
+
+        private void OnGroupPanelRevert(LayoutElementsContainer layout, bool toDefault)
+        {
+            if (layout == null)
+                return;
+
+            foreach (var editor in layout.Editors)
+            {
+                if (toDefault && editor.CanRevertDefaultValue)
+                    editor.RevertToDefaultValue();
+                else if (!toDefault && editor.CanRevertReferenceValue)
+                    editor.RevertToReferenceValue();
+            }
+
+            foreach (var child in layout.Children)
+                OnGroupPanelRevert(child as LayoutElementsContainer, toDefault);
+        }
+
+        private void OnGroupPanelMouseButtonRightClicked(DropPanel groupPanel, Vector2 location)
+        {
+            var group = (GroupElement)groupPanel.Tag;
+            bool canRevertReference = false, canRevertDefault = false;
+            GroupPanelCheckIfCanRevert(group, ref canRevertReference, ref canRevertDefault);
+
+            var menu = new ContextMenu();
+            var revertToPrefab = menu.AddButton("Revert to Prefab", () => OnGroupPanelRevert(group, false));
+            revertToPrefab.Enabled = canRevertReference;
+            var resetToDefault = menu.AddButton("Reset to default", () => OnGroupPanelRevert(group, true));
+            resetToDefault.Enabled = canRevertDefault;
+            menu.Show(groupPanel, location);
         }
 
         /// <summary>
@@ -419,6 +467,14 @@ namespace FlaxEditor.CustomEditors.Editors
         }
 
         /// <inheritdoc />
+        internal override void Initialize(CustomEditorPresenter presenter, LayoutElementsContainer layout, ValueContainer values)
+        {
+            _isNull = values != null && values.IsNull;
+
+            base.Initialize(presenter, layout, values);
+        }
+
+        /// <inheritdoc />
         public override void Initialize(LayoutElementsContainer layout)
         {
             _visibleIfCaches = null;
@@ -446,12 +502,7 @@ namespace FlaxEditor.CustomEditors.Editors
                             Parent = layout.ContainerControl,
                             Location = new Vector2(layout.ContainerControl.Width - ButtonSize - 4, (layout.ContainerControl.Height - ButtonSize) * 0.5f),
                         };
-                        button.Clicked += () =>
-                        {
-                            var newType = Values.Type;
-                            SetValue(newType.CreateInstance());
-                            RebuildLayoutOnRefresh();
-                        };
+                        button.Clicked += () => SetValue(Values.Type.CreateInstance());
                     }
 
                     layout.Label("<null>");
@@ -506,7 +557,11 @@ namespace FlaxEditor.CustomEditors.Editors
                 if (item.UseGroup)
                 {
                     if (lastGroup == null || lastGroup.Panel.HeaderText != item.Display.Group)
+                    {
                         lastGroup = layout.Group(item.Display.Group);
+                        lastGroup.Panel.Tag = lastGroup;
+                        lastGroup.Panel.MouseButtonRightClicked += OnGroupPanelMouseButtonRightClicked;
+                    }
                     itemLayout = lastGroup;
                 }
                 else
@@ -558,6 +613,13 @@ namespace FlaxEditor.CustomEditors.Editors
         /// <inheritdoc />
         public override void Refresh()
         {
+            // Automatic refresh when value nullability changed
+            if (_isNull != Values.IsNull)
+            {
+                RebuildLayout();
+                return;
+            }
+
             if (_visibleIfCaches != null)
             {
                 try

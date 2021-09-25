@@ -46,6 +46,7 @@ typedef Dictionary<Guid, Actor*, HeapAllocation> ActorsLookup;
 
 #define DECLARE_SCENE_OBJECT_ABSTRACT(type) \
     DECLARE_SCRIPTING_TYPE_NO_SPAWN(type); \
+    static type* Spawn(const SpawnParams& params) { return nullptr; } \
     explicit type(const SpawnParams& params)
 
 #define DECLARE_SCENE_OBJECT_NO_SPAWN(type) \
@@ -194,7 +195,7 @@ public:
     /// </summary>
     /// <param name="prefabId">The prefab asset identifier.</param>
     /// <param name="prefabObjectId">The prefab object identifier.</param>
-    API_FUNCTION() virtual void LinkPrefab(const Guid& prefabId, const Guid& prefabObjectId);
+    API_FUNCTION(Attributes="NoAnimate") virtual void LinkPrefab(const Guid& prefabId, const Guid& prefabObjectId);
 
     /// <summary>
     /// Breaks the prefab linkage for this object, all its scripts, and all child actors.

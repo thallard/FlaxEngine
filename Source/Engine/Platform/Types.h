@@ -58,8 +58,8 @@ class UnixConditionVariable;
 typedef UnixConditionVariable ConditionVariable;
 class LinuxFileSystem;
 typedef LinuxFileSystem FileSystem;
-class FileSystemWatcherBase;
-typedef FileSystemWatcherBase FileSystemWatcher;
+class LinuxFileSystemWatcher;
+typedef LinuxFileSystemWatcher FileSystemWatcher;
 class UnixFile;
 typedef UnixFile File;
 class LinuxPlatform;
@@ -93,6 +93,28 @@ class PS4Window;
 typedef PS4Window Window;
 class PS4Network;
 typedef PS4Network Network;
+#elif PLATFORM_XBOX_ONE
+
+class ClipboardBase;
+typedef ClipboardBase Clipboard;
+class Win32CriticalSection;
+typedef Win32CriticalSection CriticalSection;
+class Win32ConditionVariable;
+typedef Win32ConditionVariable ConditionVariable;
+class XboxOneFileSystem;
+typedef XboxOneFileSystem FileSystem;
+class FileSystemWatcherBase;
+typedef FileSystemWatcherBase FileSystemWatcher;
+class Win32File;
+typedef Win32File File;
+class XboxOnePlatform;
+typedef XboxOnePlatform Platform;
+class Win32Thread;
+typedef Win32Thread Thread;
+class GDKWindow;
+typedef GDKWindow Window;
+class NetworkBase;
+typedef NetworkBase Network;
 
 #elif PLATFORM_XBOX_SCARLETT
 
@@ -112,8 +134,8 @@ class XboxScarlettPlatform;
 typedef XboxScarlettPlatform Platform;
 class Win32Thread;
 typedef Win32Thread Thread;
-class XboxScarlettWindow;
-typedef XboxScarlettWindow Window;
+class GDKWindow;
+typedef GDKWindow Window;
 class NetworkBase;
 typedef NetworkBase Network;
 

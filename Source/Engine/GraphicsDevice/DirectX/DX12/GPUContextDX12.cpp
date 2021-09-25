@@ -730,7 +730,7 @@ void GPUContextDX12::ClearUA(GPUBuffer* buf, const Vector4& value)
 
 void GPUContextDX12::ResetRenderTarget()
 {
-    if (_rtDepth != nullptr || _rtCount != 0 || _rtDepth)
+    if (_rtDepth || _rtCount != 0)
     {
         _rtDirtyFlag = false;
         _psDirtyFlag = true;
@@ -904,7 +904,7 @@ void GPUContextDX12::BindVB(const Span<GPUBuffer*>& vertexBuffers, const uint32*
     {
         _vbCount = vertexBuffers.Length();
         Platform::MemoryCopy(_vbViews, views, sizeof(views));
-#if PLATFORM_XBOX_SCARLETT
+#if PLATFORM_XBOX_SCARLETT || PLATFORM_XBOX_ONE
         if (vertexBuffers.Length() == 0)
             return;
 #endif

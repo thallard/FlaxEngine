@@ -102,11 +102,6 @@ namespace FlaxEditor.CustomEditors
         protected bool IsSetBlocked => _isSetBlocked;
 
         /// <summary>
-        /// Gets a value indicating whether this editor needs value propagation up (value synchronization when one of the child editors changes value, used by the struct types).
-        /// </summary>
-        protected virtual bool NeedsValuePropagationUp => Values.HasValueType;
-
-        /// <summary>
         /// The linked label used to show this custom editor. Can be null if not used (eg. editor is inlined or is using a very customized UI layout).
         /// </summary>
         public PropertyNameLabel LinkedLabel;
@@ -281,7 +276,7 @@ namespace FlaxEditor.CustomEditors
 
                 // Propagate values up (eg. when member of structure gets modified, also structure should be updated as a part of the other object)
                 var obj = _parent;
-                while (obj._parent != null && !(obj._parent is SyncPointEditor)) // && obj.NeedsValuePropagationUp)
+                while (obj._parent != null && !(obj._parent is SyncPointEditor))
                 {
                     obj.Values.Set(obj._parent.Values, obj.Values);
                     obj = obj._parent;
@@ -301,12 +296,15 @@ namespace FlaxEditor.CustomEditors
             _isSetBlocked = false;
 
             // Update children
+            if (_skipChildrenRefresh)
+            {
+                _skipChildrenRefresh = false;
+                return;
+            }
             try
             {
-                var childrenCount = _skipChildrenRefresh ? 0 : _children.Count;
-                for (int i = 0; i < childrenCount; i++)
+                for (int i = 0; i < _children.Count; i++)
                     _children[i].RefreshInternal();
-                _skipChildrenRefresh = false;
             }
             catch (TargetException ex)
             {
@@ -382,7 +380,7 @@ namespace FlaxEditor.CustomEditors
                     return false;
 
                 // Skip array items (show diff only on a bottom level properties and fields)
-                if (ParentEditor != null && ParentEditor.Values.Type != ScriptType.Null && ParentEditor.Values.Type.IsArray)
+                if (ParentEditor is Editors.ArrayEditor)
                     return false;
 
                 return true;
@@ -396,9 +394,6 @@ namespace FlaxEditor.CustomEditors
         {
             if (!Values.HasDefaultValue)
                 return;
-
-            Editor.Log("Reverting object changes to default");
-
             RevertDiffToDefault(this);
         }
 
@@ -467,7 +462,7 @@ namespace FlaxEditor.CustomEditors
                     return false;
 
                 // Skip array items (show diff only on a bottom level properties and fields)
-                if (ParentEditor != null && ParentEditor.Values.Type != ScriptType.Null && ParentEditor.Values.Type.IsArray)
+                if (ParentEditor is Editors.ArrayEditor)
                     return false;
 
                 return true;
@@ -481,9 +476,6 @@ namespace FlaxEditor.CustomEditors
         {
             if (!Values.HasReferenceValue)
                 return;
-
-            Editor.Log("Reverting object changes to prefab");
-
             RevertDiffToReference(this);
         }
 
@@ -620,6 +612,13 @@ namespace FlaxEditor.CustomEditors
                     return false;
                 JsonSerializer.ParseID(text, out var id);
                 obj = FlaxEngine.Object.Find<FlaxEngine.Object>(ref id);
+            }
+            else if (Color.TryParseHex(text, out var color))
+            {
+                // Hex color
+                obj = color;
+                if (Values.Type.Type == typeof(Color32))
+                    obj = (Color32)color;
             }
             else
             {

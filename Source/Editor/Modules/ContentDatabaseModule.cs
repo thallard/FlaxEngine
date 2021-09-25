@@ -950,9 +950,13 @@ namespace FlaxEditor.Modules
             if (typePS4PlatformSettings != null)
                 Proxy.Add(new SettingsProxy(typePS4PlatformSettings, Editor.Instance.Icons.PlaystationSettings128));
 
+            var typeXboxOnePlatformSettings = TypeUtils.GetManagedType(GameSettings.XboxOnePlatformSettingsTypename);
+            if (typeXboxOnePlatformSettings != null)
+                Proxy.Add(new SettingsProxy(typeXboxOnePlatformSettings, Editor.Instance.Icons.XBOXSettings128));
+
             var typeXboxScarlettPlatformSettings = TypeUtils.GetManagedType(GameSettings.XboxScarlettPlatformSettingsTypename);
             if (typeXboxScarlettPlatformSettings != null)
-                Proxy.Add(new SettingsProxy(typeXboxScarlettPlatformSettings, Editor.Instance.Icons.XBoxScarletIcon128));
+                Proxy.Add(new SettingsProxy(typeXboxScarlettPlatformSettings, Editor.Instance.Icons.XBOXSettings128));
 
             var typeSwitchPlatformSettings = TypeUtils.GetManagedType(GameSettings.SwitchPlatformSettingsTypename);
             if (typeSwitchPlatformSettings != null)
@@ -962,6 +966,7 @@ namespace FlaxEditor.Modules
             Proxy.Add(new GenericJsonAssetProxy());
 
             // Create content folders nodes
+            var startTime = Platform.TimeSeconds;
             Engine = new ProjectTreeNode(Editor.EngineProject)
             {
                 Content = new MainContentTreeNode(Engine, ContentFolderType.Content, Globals.EngineContentFolder),
@@ -1001,8 +1006,9 @@ namespace FlaxEditor.Modules
             // Enable events
             _enableEvents = true;
             Editor.ContentImporting.ImportFileEnd += ContentImporting_ImportFileDone;
+            var endTime = Platform.TimeSeconds;
 
-            Editor.Log("Project database created. Items count: " + _itemsCreated);
+            Editor.Log(string.Format("Project database created in {0} ms. Items count: {1}", (int)((endTime - startTime) * 1000.0), _itemsCreated));
         }
 
         private void ContentImporting_ImportFileDone(IFileEntryAction obj, bool failed)

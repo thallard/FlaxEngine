@@ -4,6 +4,7 @@
 
 #include "ModelTool.h"
 #include "Engine/Core/Log.h"
+#include "Engine/Core/Math/Mathd.h"
 #include "Engine/Core/Math/Matrix.h"
 #include "Engine/Core/Collections/Sorting.h"
 #include "Engine/Platform/FileSystem.h"
@@ -171,7 +172,7 @@ struct OpenFbxImporterData
 
     bool ImportMaterialTexture(const ofbx::Material* mat, ofbx::Texture::TextureType textureType, int32& textureIndex, TextureEntry::TypeHint type) const
     {
-        const ofbx::Texture* tex = mat->getTexture(ofbx::Texture::DIFFUSE);
+        const ofbx::Texture* tex = mat->getTexture(textureType);
         if (tex)
         {
             // Find texture file path

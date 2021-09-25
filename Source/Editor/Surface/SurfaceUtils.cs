@@ -92,6 +92,7 @@ namespace FlaxEditor.Surface
             case MaterialParameterType.GPUTexture: return typeof(GPUTexture);
             case MaterialParameterType.Matrix: return typeof(Matrix);
             case MaterialParameterType.ChannelMask: return typeof(ChannelMask);
+            case MaterialParameterType.TextureGroupSampler: return typeof(int);
             default: throw new ArgumentOutOfRangeException(nameof(type), type, null);
             }
         }
@@ -425,6 +426,22 @@ namespace FlaxEditor.Surface
                 return false;
             var managedType = TypeUtils.GetType(scriptType);
             return !TypeUtils.IsDelegate(managedType);
+        }
+
+        internal static string GetVisualScriptTypeDescription(ScriptType type)
+        {
+            var sb = new StringBuilder();
+            if (type.IsStatic)
+                sb.Append("static ");
+            else if (type.IsAbstract)
+                sb.Append("abstract ");
+            sb.Append(type.TypeName);
+
+            var attributes = type.GetAttributes(false);
+            var tooltipAttribute = (TooltipAttribute)attributes.FirstOrDefault(x => x is TooltipAttribute);
+            if (tooltipAttribute != null)
+                sb.Append("\n").Append(tooltipAttribute.Text);
+            return sb.ToString();
         }
 
         internal static string GetVisualScriptMemberInfoDescription(ScriptMemberInfo member)

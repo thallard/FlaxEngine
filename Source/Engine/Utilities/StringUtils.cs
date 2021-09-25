@@ -147,7 +147,6 @@ namespace FlaxEngine
         {
             bool isRooted = (path.Length >= 2 && char.IsLetterOrDigit(path[0]) && path[1] == ':') ||
                             path.StartsWith("\\\\") ||
-                            path.StartsWith("/") ||
                             path.StartsWith("\\") ||
                             path.StartsWith("/");
             return !isRooted;
@@ -252,6 +251,16 @@ namespace FlaxEngine
             string[] graphemes = s.GraphemeClusters().ToArray();
             Array.Reverse(graphemes);
             return string.Concat(graphemes);
+        }
+
+        /// <summary>
+        /// Removes any new line characters (\r or \n) from the string.
+        /// </summary>
+        /// <param name="s">The string to process.</param>
+        /// <returns>The single-line string.</returns>
+        public static string RemoveNewLine(this string s)
+        {
+            return s.Replace("\n", "").Replace("\r", "");
         }
 
         private static readonly Regex IncNameRegex1 = new Regex("(\\d+)$");

@@ -291,7 +291,8 @@ void WheeledVehicle::Setup()
         offsets[i] = C2P(wheel.Collider->GetLocalPosition());
     }
     PxF32 sprungMasses[PX_MAX_NB_WHEELS];
-    PxVehicleComputeSprungMasses(wheels.Count(), offsets, centerOfMassOffset.p, _actor->getMass(), 1, sprungMasses);
+    const float mass = _actor->getMass();
+    PxVehicleComputeSprungMasses(wheels.Count(), offsets, centerOfMassOffset.p, mass, 1, sprungMasses);
     PxVehicleWheelsSimData* wheelsSimData = PxVehicleWheelsSimData::allocate(wheels.Count());
     for (int32 i = 0; i < wheels.Count(); i++)
     {
@@ -303,15 +304,17 @@ void WheeledVehicle::Setup()
 
         PxVehicleSuspensionData suspensionData;
         const float suspensionFrequency = 7.0f;
-        const float suspensionDampingRatio = 1.0f;
-        suspensionData.mMaxCompression = 10.0f;
-        suspensionData.mMaxDroop = 10.0f;
+        suspensionData.mMaxCompression = wheel.SuspensionMaxRaise;
+        suspensionData.mMaxDroop = wheel.SuspensionMaxDrop;
         suspensionData.mSprungMass = sprungMasses[i];
         suspensionData.mSpringStrength = Math::Square(suspensionFrequency) * suspensionData.mSprungMass;
-        suspensionData.mSpringDamperRate = suspensionDampingRatio * 2.0f * Math::Sqrt(suspensionData.mSpringStrength * suspensionData.mSprungMass);
+        suspensionData.mSpringDamperRate = wheel.SuspensionDampingRate * 2.0f * Math::Sqrt(suspensionData.mSpringStrength * suspensionData.mSprungMass);
 
         PxVehicleTireData tire;
         tire.mType = 0;
+        tire.mLatStiffX = wheel.TireLateralMax;
+        tire.mLatStiffY = wheel.TireLateralStiffness;
+        tire.mLongitudinalStiffnessPerUnitGravity = wheel.TireLongitudinalStiffness;
 
         PxVehicleWheelData wheelData;
         wheelData.mMass = wheel.Mass;
@@ -324,16 +327,17 @@ void WheeledVehicle::Setup()
         wheelData.mMaxHandBrakeTorque = M2ToCm2(wheel.MaxHandBrakeTorque);
 
         PxVec3 centreOffset = centerOfMassOffset.transformInv(offsets[i]);
-        float suspensionForceOffset = 0.0f;
-        PxVec3 forceAppPointOffset(centreOffset.x, centreOffset.y, centreOffset.z + suspensionForceOffset);
+        PxVec3 forceAppPointOffset(centreOffset.x, wheel.SuspensionForceOffset, centreOffset.z);
 
         wheelsSimData->setTireData(i, tire);
         wheelsSimData->setWheelData(i, wheelData);
         wheelsSimData->setSuspensionData(i, suspensionData);
-        wheelsSimData->setSuspTravelDirection(i, PxVec3(0, -1, 0));
+        wheelsSimData->setSuspTravelDirection(i, centerOfMassOffset.rotate(PxVec3(0.0f, -1.0f, 0.0f)));
         wheelsSimData->setWheelCentreOffset(i, centreOffset);
         wheelsSimData->setSuspForceAppPointOffset(i, forceAppPointOffset);
         wheelsSimData->setTireForceAppPointOffset(i, forceAppPointOffset);
+        wheelsSimData->setSubStepCount(4.0f * 100.0f, 3, 1);
+        wheelsSimData->setMinLongSlipDenominator(4.0f * 100.0f);
 
         PxShape* wheelShape = wheel.Collider->GetPxShape();
         if (wheel.Collider->IsActiveInHierarchy())
@@ -346,6 +350,9 @@ void WheeledVehicle::Setup()
             wheelShape->setQueryFilterData(filter);
             wheelShape->setSimulationFilterData(filter);
             wheelsSimData->setSceneQueryFilterData(i, filter);
+
+            // Remove wheels from the simulation (suspension force hold the vehicle)
+            wheelShape->setFlag(PxShapeFlag::eSIMULATION_SHAPE, false);
         }
         else
         {
@@ -508,11 +515,29 @@ void WheeledVehicle::Setup()
 void WheeledVehicle::DrawPhysicsDebug(RenderView& view)
 {
     // Wheels shapes
-    for (auto& wheel : _wheels)
+    for (auto& data : _wheelsData)
     {
+        int32 wheelIndex = 0;
+        for (; wheelIndex < _wheels.Count(); wheelIndex++)
+        {
+            if (_wheels[wheelIndex].Collider == data.Collider)
+                break;
+        }
+        if (wheelIndex == _wheels.Count())
+            break;
+        auto& wheel = _wheels[wheelIndex];
         if (wheel.Collider && wheel.Collider->GetParent() == this && !wheel.Collider->GetIsTrigger())
         {
-            DEBUG_DRAW_WIRE_CYLINDER(wheel.Collider->GetPosition(), wheel.Collider->GetOrientation(), wheel.Radius, wheel.Width, Color::Red * 0.8f, 0, true);
+            const Vector3 currentPos = wheel.Collider->GetPosition();
+            const Vector3 basePos = currentPos - Vector3(0, data.State.SuspensionOffset, 0);
+            DEBUG_DRAW_WIRE_SPHERE(BoundingSphere(basePos, wheel.Radius * 0.07f), Color::Blue * 0.3f, 0, true);
+            DEBUG_DRAW_WIRE_SPHERE(BoundingSphere(currentPos, wheel.Radius * 0.08f), Color::Blue * 0.8f, 0, true);
+            DEBUG_DRAW_LINE(basePos, currentPos, Color::Blue, 0, true);
+            DEBUG_DRAW_WIRE_CYLINDER(currentPos, wheel.Collider->GetOrientation(), wheel.Radius, wheel.Width, Color::Red * 0.8f, 0, true);
+            if (!data.State.IsInAir)
+            {
+                DEBUG_DRAW_WIRE_SPHERE(BoundingSphere(data.State.TireContactPoint, 5.0f), Color::Green, 0, true);
+            }
         }
     }
 }
@@ -520,11 +545,35 @@ void WheeledVehicle::DrawPhysicsDebug(RenderView& view)
 void WheeledVehicle::OnDebugDrawSelected()
 {
     // Wheels shapes
-    for (auto& wheel : _wheels)
+    for (auto& data : _wheelsData)
     {
+        int32 wheelIndex = 0;
+        for (; wheelIndex < _wheels.Count(); wheelIndex++)
+        {
+            if (_wheels[wheelIndex].Collider == data.Collider)
+                break;
+        }
+        if (wheelIndex == _wheels.Count())
+            break;
+        auto& wheel = _wheels[wheelIndex];
         if (wheel.Collider && wheel.Collider->GetParent() == this && !wheel.Collider->GetIsTrigger())
         {
-            DEBUG_DRAW_WIRE_CYLINDER(wheel.Collider->GetPosition(), wheel.Collider->GetOrientation(), wheel.Radius, wheel.Width, Color::Red * 0.4f, 0, false);
+            const Vector3 currentPos = wheel.Collider->GetPosition();
+            const Vector3 basePos = currentPos - Vector3(0, data.State.SuspensionOffset, 0);
+            DEBUG_DRAW_WIRE_SPHERE(BoundingSphere(basePos, wheel.Radius * 0.07f), Color::Blue * 0.3f, 0, false);
+            DEBUG_DRAW_WIRE_SPHERE(BoundingSphere(currentPos, wheel.Radius * 0.08f), Color::Blue * 0.8f, 0, false);
+            DEBUG_DRAW_WIRE_SPHERE(BoundingSphere(P2C(_actor->getGlobalPose().transform(wheel.Collider->GetPxShape()->getLocalPose()).p), wheel.Radius * 0.11f), Color::OrangeRed * 0.8f, 0, false);
+            DEBUG_DRAW_LINE(basePos, currentPos, Color::Blue, 0, false);
+            DEBUG_DRAW_WIRE_CYLINDER(currentPos, wheel.Collider->GetOrientation(), wheel.Radius, wheel.Width, Color::Red * 0.4f, 0, false);
+            if (!data.State.SuspensionTraceStart.IsZero())
+            {
+                DEBUG_DRAW_WIRE_SPHERE(BoundingSphere(data.State.SuspensionTraceStart, 5.0f), Color::AliceBlue, 0, false);
+                DEBUG_DRAW_LINE(data.State.SuspensionTraceStart, data.State.SuspensionTraceEnd, data.State.IsInAir ? Color::Red : Color::Green, 0, false);
+            }
+            if (!data.State.IsInAir)
+            {
+                DEBUG_DRAW_WIRE_SPHERE(BoundingSphere(data.State.TireContactPoint, 5.0f), Color::Green, 0, false);
+            }
         }
     }
 
@@ -545,6 +594,7 @@ void WheeledVehicle::Serialize(SerializeStream& stream, const void* otherObj)
     SERIALIZE_MEMBER(DriveType, _driveType);
     SERIALIZE_MEMBER(Wheels, _wheels);
     SERIALIZE(UseReverseAsBrake);
+    SERIALIZE(UseAnalogSteering);
     SERIALIZE_MEMBER(Engine, _engine);
     SERIALIZE_MEMBER(Differential, _differential);
     SERIALIZE_MEMBER(Gearbox, _gearbox);
@@ -557,6 +607,7 @@ void WheeledVehicle::Deserialize(DeserializeStream& stream, ISerializeModifier* 
     DESERIALIZE_MEMBER(DriveType, _driveType);
     DESERIALIZE_MEMBER(Wheels, _wheels);
     DESERIALIZE(UseReverseAsBrake);
+    DESERIALIZE(UseAnalogSteering);
     DESERIALIZE_MEMBER(Engine, _engine);
     DESERIALIZE_MEMBER(Differential, _differential);
     DESERIALIZE_MEMBER(Gearbox, _gearbox);

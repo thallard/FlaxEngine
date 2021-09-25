@@ -446,7 +446,6 @@ void Mesh::Draw(const RenderContext& renderContext, const DrawInfo& info, float 
     drawCall.Geometry.VertexBuffersOffsets[2] = 0;
     if (info.VertexColors && info.VertexColors[_lodIndex])
     {
-        drawCall.Geometry.VertexBuffers[2] = info.VertexColors[_lodIndex];
         // TODO: cache vertexOffset within the model LOD per-mesh
         uint32 vertexOffset = 0;
         for (int32 meshIndex = 0; meshIndex < _index; meshIndex++)
@@ -608,7 +607,7 @@ ScriptingObject* Mesh::GetParentModel()
     return _model;
 }
 
-bool Mesh::UpdateMeshInt(int32 vertexCount, int32 triangleCount, MonoArray* verticesObj, MonoArray* trianglesObj, MonoArray* normalsObj, MonoArray* tangentsObj, MonoArray* uvObj, MonoArray* colorsObj)
+bool Mesh::UpdateMeshUInt(int32 vertexCount, int32 triangleCount, MonoArray* verticesObj, MonoArray* trianglesObj, MonoArray* normalsObj, MonoArray* tangentsObj, MonoArray* uvObj, MonoArray* colorsObj)
 {
     return ::UpdateMesh<uint32>(this, (uint32)vertexCount, (uint32)triangleCount, verticesObj, trianglesObj, normalsObj, tangentsObj, uvObj, colorsObj);
 }
@@ -618,7 +617,7 @@ bool Mesh::UpdateMeshUShort(int32 vertexCount, int32 triangleCount, MonoArray* v
     return ::UpdateMesh<uint16>(this, (uint32)vertexCount, (uint32)triangleCount, verticesObj, trianglesObj, normalsObj, tangentsObj, uvObj, colorsObj);
 }
 
-bool Mesh::UpdateTrianglesInt(int32 triangleCount, MonoArray* trianglesObj)
+bool Mesh::UpdateTrianglesUInt(int32 triangleCount, MonoArray* trianglesObj)
 {
     return ::UpdateTriangles<uint32>(this, triangleCount, trianglesObj);
 }

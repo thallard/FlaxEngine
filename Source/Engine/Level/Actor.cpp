@@ -1425,9 +1425,23 @@ Actor* Actor::Intersects(const Ray& ray, float& distance, Vector3& normal)
 
 void Actor::LookAt(const Vector3& worldPos)
 {
+    const Quaternion orientation = LookingAt(worldPos);
+
+    SetOrientation(orientation);
+}
+
+void Actor::LookAt(const Vector3& worldPos, const Vector3& worldUp)
+{
+    const Quaternion orientation = LookingAt(worldPos, worldUp);
+
+    SetOrientation(orientation);
+}
+
+Quaternion Actor::LookingAt(const Vector3& worldPos)
+{
     const Vector3 direction = worldPos - _transform.Translation;
     if (direction.LengthSquared() < ZeroTolerance)
-        return;
+        return _parent->GetOrientation();
 
     const Vector3 newForward = Vector3::Normalize(direction);
     const Vector3 oldForward = _transform.Orientation * Vector3::Forward;
@@ -1447,26 +1461,25 @@ void Actor::LookAt(const Vector3& worldPos)
         orientation = rotQuat * _transform.Orientation;
     }
 
-    SetOrientation(orientation);
+    return orientation;
 }
 
-void Actor::LookAt(const Vector3& worldPos, const Vector3& worldUp)
+Quaternion Actor::LookingAt(const Vector3& worldPos, const Vector3& worldUp)
 {
     const Vector3 direction = worldPos - _transform.Translation;
     if (direction.LengthSquared() < ZeroTolerance)
-        return;
+        return _parent->GetOrientation();
     const Vector3 forward = Vector3::Normalize(direction);
     const Vector3 up = Vector3::Normalize(worldUp);
 
     if (Math::IsOne(Vector3::Dot(forward, up)))
     {
-        LookAt(worldPos);
-        return;
+        return LookingAt(worldPos);
     }
 
     Quaternion orientation;
     Quaternion::LookRotation(direction, up, orientation);
-    SetOrientation(orientation);
+    return orientation;
 }
 
 void WriteObjectToBytes(SceneObject* obj, rapidjson_flax::StringBuffer& buffer, MemoryWriteStream& output)
@@ -1580,6 +1593,7 @@ bool Actor::FromBytes(const Span<byte>& data, Array<Actor*>& output, ISerializeM
     modifier->EngineBuild = engineBuild;
     CollectionPoolCache<ActorsCache::SceneObjectsListType>::ScopeCache sceneObjects = ActorsCache::SceneObjectsListCache.Get();
     sceneObjects->Resize(objectsCount);
+    SceneObjectsFactory::Context context(modifier);
 
     // Deserialize objects
     Scripting::ObjectsLookupIdMapping.Set(&modifier->IdsMapping);
@@ -1610,22 +1624,23 @@ bool Actor::FromBytes(const Span<byte>& data, Array<Actor*>& output, ISerializeM
         }
 
         // Create object
-        auto obj = SceneObjectsFactory::Spawn(document, modifier);
+        auto obj = SceneObjectsFactory::Spawn(context, document);
+        sceneObjects->At(i) = obj;
         if (obj == nullptr)
         {
             LOG(Warning, "Cannot create object.");
-            return true;
+            continue;
         }
         obj->RegisterObject();
 
         // Add to results
-        sceneObjects->At(i) = obj;
         Actor* actor = dynamic_cast<Actor*>(obj);
         if (actor)
         {
             output.Add(actor);
         }
     }
+    // TODO: optimize this to call json parsing only once per-object instead of twice (spawn + load)
     stream.SetPosition(startPos);
     for (int32 i = 0; i < objectsCount; i++)
     {
@@ -1639,7 +1654,7 @@ bool Actor::FromBytes(const Span<byte>& data, Array<Actor*>& output, ISerializeM
         int32 orderInParent;
         stream.ReadInt32(&orderInParent);
 
-        // Load JSON 
+        // Load JSON
         rapidjson_flax::Document document;
         {
             PROFILE_CPU_NAMED("Json.Parse");
@@ -1653,7 +1668,10 @@ bool Actor::FromBytes(const Span<byte>& data, Array<Actor*>& output, ISerializeM
 
         // Deserialize object
         auto obj = sceneObjects->At(i);
-        SceneObjectsFactory::Deserialize(obj, document, modifier);
+        if (obj)
+            SceneObjectsFactory::Deserialize(context, obj, document);
+        else
+            SceneObjectsFactory::HandleObjectDeserializationError(document);
     }
     Scripting::ObjectsLookupIdMapping.Set(nullptr);
 
